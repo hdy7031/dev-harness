@@ -1,0 +1,18 @@
+{
+  "name": "dev-harness",
+  "version": "0.2.0",
+  "description": "Lightweight development-project bootstrap, handoff, and Git recovery workflows.",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Dev Harness",
+    "shortDescription": "Keep project context and Git recovery close to the repo.",
+    "longDescription": "Bootstrap a minimal project harness, refresh a concise handoff, and diagnose common Git failures.",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Use dev-harness to bootstrap this repository."
+  }
+}
