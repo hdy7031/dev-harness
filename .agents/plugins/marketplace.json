@@ -8,7 +8,7 @@
       "name": "dev-harness",
       "source": {
         "source": "local",
-        "path": "./plugins/dev-harness"
+        "path": "./"
       },
       "policy": {
         "installation": "AVAILABLE",
