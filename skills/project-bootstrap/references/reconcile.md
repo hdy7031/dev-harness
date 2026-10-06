@@ -20,12 +20,13 @@ Read old AGENTS, relevant context/decisions/handoff, project structure, and only
 | --- | --- |
 | Long-lived project fact or unique architecture/domain constraint | `invariant`: preserve outside managed sections |
 | Generic guidance already covered by core/profile | `merge`: name the covering principle in the reason |
-| Current architecture/stage fact | `context`: move to PROJECT_CONTEXT |
+| Current project-state fact that future development decisions may rely on, including architecture/stage | `context`: move to PROJECT_CONTEXT |
 | Useful next-session state or task continuation | `handoff`: move to HANDOFF |
 | Consequential choice and rationale | `decision`: move to DECISIONS |
 | Obsolete task/phase instruction or valueless historical ceremony | `drop`: explain why it is obsolete or safely covered elsewhere |
+| Bootstrap execution trace without future project meaning | `drop`: omit from durable routing; retain relevant evidence in the current report |
 
-Structural headings can be dropped with the reason that the three-layer structure replaces them. Preserve uncertain unique rules until evidence supports retirement. Reconcile mixed paragraphs by splitting them into smaller line ranges or supplying a faithful `text` rewrite that retains every meaningful constraint. Keep nested/path-scoped AGENTS intact; do not hoist their scope into global rules.
+Structural headings can be dropped with the reason that the three-layer structure replaces them. Preserve uncertain unique rules and project facts until evidence supports classification or retirement. Reconcile mixed paragraphs by splitting them into smaller line ranges or supplying a faithful `text` rewrite that retains every meaningful constraint. Keep nested/path-scoped AGENTS intact; do not hoist their scope into global rules.
 
 Each range requires a reason; preserved/moved text defaults to its exact original lines. `text` is an optional semantic rewrite, never a license to erase constraints. The plan's `agents_sha256` must equal inspect output, so a changed source invalidates the plan. Coverage proves consideration, not correctness: inspect the actual semantic diff.
 
@@ -58,6 +59,8 @@ Example plan (replace the hash with the actual inspect value):
 The result retains both unique constraints below `## Project-specific invariants`; generic verification appears once in the managed kernel, and the old phase/test count becomes explicitly historical handoff material. A few newly extracted invariants can be added with `"invariants": [{"text": "...", "evidence": "observed source and reason this is stable"}]`. This also works for Seed; omit it when no facts are known.
 
 ## Existing context and Git metadata
+
+Ask whether a fact remains meaningful to project development after this bootstrap session ends. Current goals, stack, repository structure, build/test entry points, release/version discrepancies, design freezes, and architecture observations belong in `context`. Git/worktree facts qualify only when they describe lasting project configuration or constraints, such as an evidence-verified canonical remote relevant to future work. Temporary worktree paths, bootstrap test/backup branches, audit-start HEADs, migration branch topology or remote status, and statements about the main checkout or migration push/merge are execution evidence. Usually `drop` these from durable routing and report them in the current task; use `handoff` only if an unfinished task needs them next session. A completed bootstrap does not require importing its trace into any of the five harness files. Preserve an uncertain unique project fact until evidence supports its classification.
 
 The helper creates missing context/handoff/decision files from minimal assets and preserves existing bytes unless routing text into them. It suppresses exact duplicate imports and marks imported material as historical. When existing sections already express the same knowledge in other words, first merge the moved facts into the right sections semantically, preserving unrelated content; the plan's routed `text` should match the merged text, so no import is appended. Replace obsolete continuation state when appropriate rather than accumulating history. Do not label old progress as newly verified.
 

@@ -23,6 +23,8 @@ Use the standard-library Python 3.11+ helper [scripts/bootstrap.py](scripts/boot
 
 Keep only stable architecture/domain/data/product rules and long-lived constraints in project-specific invariants. Route current stage/architecture facts to `docs/PROJECT_CONTEXT.md`, next-session continuation to `HANDOFF.md`, and consequential decisions with rationale to `docs/DECISIONS.md`. Do not present historical test counts or phase status as current verified facts. Merge into existing destination sections without duplication or loss of unrelated content.
 
+PROJECT_CONTEXT records project state that future development decisions may rely on, not the execution trace of the bootstrap/reconciliation session. Record Git/worktree facts there only when they are lasting project configuration or constraints; do not save the current execution branch, HEAD, temporary worktree, or backup branch as project facts. Keep bootstrap operational evidence in the current report; use HANDOFF only when it supports next-session continuation.
+
 Config records `[harness]`, `version = 2`, and the primary `profile`. Preserve existing Git metadata exactly. Add an observed remote name or `git.verified_canonical_remote` only when local evidence and reachability justify it; leave suspicious/unreachable origin unchanged and explain uncertainty. The helper does not infer or change Git metadata.
 
 ## Verify and stop

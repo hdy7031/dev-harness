@@ -127,6 +127,47 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(bootstrap.run(self.root)["changed"], [])
         self.assertEqual(self.snapshot(), snapshot)
 
+    def test_explicit_plan_drops_bootstrap_execution_state(self):
+        architecture = "- Current architecture: Electron desktop shell."
+        migration_lines = (
+            "- Current harness worktree: C:/temp/foo.",
+            "- Testing branch: test/harness-v2.",
+            "- Backup branch: backup/pre-harness-v2.",
+        )
+        self.write("AGENTS.md", "\n".join((architecture, *migration_lines)) + "\n")
+        info = bootstrap.run(self.root, inspect_only=True)
+        # Codex supplies the semantic classification; the writer only applies it.
+        plan = {"agents_sha256": info["agents_sha256"], "rules": [
+            {"start": 1, "end": 1, "action": "context", "reason": "Current architecture fact"},
+            {"start": 2, "end": 4, "action": "drop",
+             "reason": "Bootstrap execution state, not durable project context"},
+        ]}
+        result = bootstrap.run(self.root, "software", plan)
+        self.assertEqual(result["mode"], "reconcile")
+        context = (self.root / "docs/PROJECT_CONTEXT.md").read_text(encoding="utf-8")
+        self.assertIn(architecture, context)
+        for name in bootstrap.FILES:
+            content = (self.root / name).read_text(encoding="utf-8")
+            for line in migration_lines:
+                self.assertNotIn(line, content)
+        snapshot = self.snapshot()
+        self.assertEqual(bootstrap.run(self.root)["changed"], [])
+        self.assertEqual(self.snapshot(), snapshot)
+
+        # No keyword filtering: the helper honors context routing even for these lines.
+        self.root = self.root / "explicit-context"
+        self.root.mkdir()
+        self.write("AGENTS.md", "\n".join(migration_lines) + "\n")
+        info = bootstrap.run(self.root, inspect_only=True)
+        plan = {"agents_sha256": info["agents_sha256"], "rules": [
+            {"start": 1, "end": 3, "action": "context",
+             "reason": "Writer contract check: classification is supplied by the caller"},
+        ]}
+        bootstrap.run(self.root, "software", plan)
+        context = (self.root / "docs/PROJECT_CONTEXT.md").read_text(encoding="utf-8")
+        for line in migration_lines:
+            self.assertIn(line, context)
+
     def test_second_run_idempotency_and_managed_upgrade(self):
         for profile in bootstrap.PROFILES:
             root = self.root / profile

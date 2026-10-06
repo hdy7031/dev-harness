@@ -25,7 +25,7 @@ Codex loads the installed cache rather than the development directory. After an 
 
 Bootstrap V2 composes `AGENTS.md` from a short common kernel, a profile stance, and repository-specific invariants. Managed boundaries allow common/profile updates while preserving unique project rules. Changing state belongs in `HANDOFF.md`, `docs/PROJECT_CONTEXT.md`, and `docs/DECISIONS.md`.
 
-The bootstrap helper requires **Python 3.11 or later** and uses only the standard library. Plugin package version `0.2.0` and generated harness version `2` are separate version numbers.
+The bootstrap helper requires **Python 3.11 or later** and uses only the standard library. Plugin package version `0.2.1` and generated harness version `2` are separate version numbers.
 
 ## Layout
 
