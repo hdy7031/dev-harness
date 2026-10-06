@@ -46,3 +46,7 @@ Run the focused bootstrap behavior tests only when its implementation changes:
 ```powershell
 python skills/project-bootstrap/scripts/test_bootstrap.py
 ```
+
+## License
+
+[MIT](LICENSE). Copyright (c) 2026 hdy7031.
