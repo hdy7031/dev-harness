@@ -20,9 +20,9 @@ Read old AGENTS, relevant context/decisions/handoff, project structure, and only
 | --- | --- |
 | Long-lived project fact or unique architecture/domain constraint | `invariant`: preserve outside managed sections |
 | Generic guidance already covered by core/profile | `merge`: name the covering principle in the reason |
-| Current project-state fact that future development decisions may rely on, including architecture/stage | `context`: move to PROJECT_CONTEXT |
+| Current project-state fact that future development decisions may rely on, including architecture/stage | `context`: move to PROJECT_CONTEXT only without an established canonical Context source |
 | Useful next-session state or task continuation | `handoff`: move to HANDOFF |
-| Consequential choice and rationale | `decision`: move to DECISIONS |
+| Consequential choice and rationale | `decision`: move to DECISIONS only without an established canonical Decisions source |
 | Obsolete task/phase instruction or valueless historical ceremony | `drop`: explain why it is obsolete or safely covered elsewhere |
 | Bootstrap execution trace without future project meaning | `drop`: omit from durable routing; retain relevant evidence in the current report |
 
@@ -60,9 +60,40 @@ The result retains both unique constraints below `## Project-specific invariants
 
 ## Existing context and Git metadata
 
+### Established canonical Context / Decisions sources
+
+Before routing `context` or `decision`, determine whether project evidence establishes an authoritative source: for example, AGENTS explicitly prescribes its path, project documentation declares its authority, or a long-standing workflow consistently uses that ledger. Merely finding `STATUS.md`, `CONTEXT.md`, or an ADR directory does not establish authority. Codex makes this semantic judgment; the helper only validates an explicit plan and never discovers sources from keywords or filenames.
+
+Reconcile alone accepts this optional field (independently declare either or both entries):
+
+```json
+{
+  "canonical_sources": {
+    "context": {
+      "path": "planning/CONTEXT.md",
+      "evidence": "Root AGENTS explicitly declares this as the current-state source."
+    },
+    "decision": {
+      "path": "planning/DECISIONS.md",
+      "evidence": "Root AGENTS explicitly declares this as the major-decision source."
+    }
+  }
+}
+```
+
+Each entry requires a project-relative path and concrete evidence. The resolved source must be an existing regular file inside the project, including when following symlinks, and cannot be any of the five Harness outputs (in particular its own bridge). The helper does not read or modify the canonical ledger. No Harness schema, mode, profile, or reconciliation action changes.
+
+Preserve that source's authority without copying, summarizing, or migrating its contents into Harness docs. The corresponding `docs/PROJECT_CONTEXT.md` / `docs/DECISIONS.md` becomes only a thin compatibility bridge identifying the canonical path and directing agents to read and update it. No current state, historical decisions, or bootstrap execution trace belongs in the bridge. Without a declared established source, ordinary routing remains unchanged.
+
+For old AGENTS knowledge already present in the canonical ledger, use `drop` with reason `already preserved in canonical source <path>`, never label it obsolete. Keep durable invariants in AGENTS. If unique Context/Decision knowledge is missing from the canonical source, stop and report semantic uncertainty: it must be added to the canonical source before applying bootstrap. Bootstrap still changes only its five allowed files; it must not update the original ledger itself. Do not silently place missing knowledge in the bridge. A canonical declaration combined with an `action=context` / `action=decision` for that same role is rejected by both dry-run and apply; the helper does not decide whether text is duplicated.
+
+Create a bridge only when its destination is absent. Preserve an existing destination byte-for-byte only if it matches the helper's bridge for the same canonical path (UTF-8 BOM and CRLF are accepted). Otherwise stop, including for substantive content or a different bridge target; do not overwrite or migrate it. Maintain needs no declaration or rediscovery: it preserves bridge bytes as unmanaged destination content. Changes to the canonical ledger alone must not change the bridge, and a repeated equivalent Maintain call must return `changed: []`.
+
+### Ordinary destinations and Git metadata
+
 Ask whether a fact remains meaningful to project development after this bootstrap session ends. Current goals, stack, repository structure, build/test entry points, release/version discrepancies, design freezes, and architecture observations belong in `context`. Git/worktree facts qualify only when they describe lasting project configuration or constraints, such as an evidence-verified canonical remote relevant to future work. Temporary worktree paths, bootstrap test/backup branches, audit-start HEADs, migration branch topology or remote status, and statements about the main checkout or migration push/merge are execution evidence. Usually `drop` these from durable routing and report them in the current task; use `handoff` only if an unfinished task needs them next session. A completed bootstrap does not require importing its trace into any of the five harness files. Preserve an uncertain unique project fact until evidence supports its classification.
 
-The helper creates missing context/handoff/decision files from minimal assets and preserves existing bytes unless routing text into them. It suppresses exact duplicate imports and marks imported material as historical. When existing sections already express the same knowledge in other words, first merge the moved facts into the right sections semantically, preserving unrelated content; the plan's routed `text` should match the merged text, so no import is appended. Replace obsolete continuation state when appropriate rather than accumulating history. Do not label old progress as newly verified.
+For roles without a declared canonical source, the helper creates missing context/handoff/decision files from minimal assets and preserves existing bytes unless routing text into them. It suppresses exact duplicate imports and marks imported material as historical. When existing sections already express the same knowledge in other words, first merge the moved facts into the right sections semantically, preserving unrelated content; the plan's routed `text` should match the merged text, so no import is appended. Replace obsolete continuation state when appropriate rather than accumulating history. Do not label old progress as newly verified.
 
 The helper mechanically updates only harness version/profile in an ordinary `[harness]` TOML table, validates that all other parsed values are unchanged, and preserves existing Git metadata/comments. Nonstandard dotted/inline harness tables need a narrow manual normalization first, preserving values. It never contacts a remote, initializes Git, changes origin, or commits. Remote verification, when actually needed, remains evidence-led and outside the writer.
 

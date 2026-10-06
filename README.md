@@ -23,9 +23,9 @@ Codex loads the installed cache rather than the development directory. After an 
 - `$dev-harness:project-handoff` refreshes `HANDOFF.md` for the next session.
 - `$dev-harness:git-recovery` diagnoses and repairs common Git failures while preserving existing work.
 
-Bootstrap V2 composes `AGENTS.md` from a short common kernel, a profile stance, and repository-specific invariants. Managed boundaries allow common/profile updates while preserving unique project rules. Changing state belongs in `HANDOFF.md`, `docs/PROJECT_CONTEXT.md`, and `docs/DECISIONS.md`.
+Bootstrap V2 composes `AGENTS.md` from a short common kernel, a profile stance, and repository-specific invariants. Managed boundaries allow common/profile updates while preserving unique project rules. Changing state belongs in `HANDOFF.md`, `docs/PROJECT_CONTEXT.md`, and `docs/DECISIONS.md`. Reconcile preserves established canonical Context/Decisions sources; the corresponding Harness docs become thin compatibility bridges instead of duplicating the existing knowledge store.
 
-The bootstrap helper requires **Python 3.11 or later** and uses only the standard library. Plugin package version `0.2.1` and generated harness version `2` are separate version numbers.
+The bootstrap helper requires **Python 3.11 or later** and uses only the standard library. Plugin package version `0.2.2` and generated harness version `2` are separate version numbers.
 
 ## Layout
 

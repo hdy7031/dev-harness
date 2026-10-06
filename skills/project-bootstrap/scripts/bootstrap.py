@@ -6,7 +6,7 @@ import difflib
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import re
 import tempfile
 import tomllib
@@ -182,7 +182,59 @@ def reconcile(text, plan, sha):
     return invariants, routes, decisions
 
 
-def prepare(before, info, profile, plan):
+def canonical_bridge(action, path):
+    if action == "context":
+        title, statement, content = "Project Context", "Canonical current project state is maintained in:", "dynamic project state"
+    else:
+        title, statement, content = "Decisions", "Canonical project decisions and rationale are maintained in:", "the decision ledger"
+    return (f"# {title}\n\n{statement}\n\n`{path}`\n\n"
+            "This file is a Dev Harness compatibility bridge. Read and update the canonical "
+            f"source rather than duplicating {content} here.\n")
+
+
+def validate_canonical_sources(root, before, info, plan):
+    if plan is None or "canonical_sources" not in plan:
+        return {}
+    if info["mode"] != "reconcile":
+        raise ValueError("canonical_sources is only supported for Reconcile")
+    declared = plan["canonical_sources"]
+    if not isinstance(declared, dict) or set(declared) - {"context", "decision"}:
+        raise ValueError("canonical_sources accepts only context and decision entries")
+    sources = {}
+    for action, item in declared.items():
+        if not isinstance(item, dict):
+            raise ValueError(f"Canonical {action} requires path and evidence")
+        value, evidence = item.get("path"), item.get("evidence")
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"Canonical {action} requires a project-relative path")
+        if not isinstance(evidence, str) or not evidence.strip():
+            raise ValueError(f"Canonical {action} requires concrete project evidence")
+        path = Path(value.replace("\\", "/"))
+        if path.is_absolute() or PureWindowsPath(value).drive or PureWindowsPath(value).root:
+            raise ValueError(f"Canonical {action} path must be project-relative")
+        if any(char in value for char in "\r\n`\x00"):
+            raise ValueError(f"Canonical {action} path cannot be represented in a thin bridge")
+        resolved = (root / path).resolve()
+        if not resolved.is_relative_to(root):
+            raise ValueError(f"Canonical {action} path resolves outside the project")
+        # A canonical store must not be one of the files this writer may change.
+        if resolved in {(root / name).resolve() for name in FILES}:
+            raise ValueError(f"Canonical {action} source cannot be a Harness output/bridge")
+        if not resolved.is_file():
+            raise ValueError(f"Canonical {action} source must exist and be a regular file")
+        if any(rule.get("action") == action for rule in plan.get("rules", [])):
+            raise ValueError(f"Canonical {action} source conflicts with action={action}; "
+                             "resolve semantic uncertainty and update the canonical source first")
+        sources[action] = path.as_posix()
+        destination = ROUTES[action]
+        existing = before[destination]
+        if existing is not None and decode(existing).replace("\r\n", "\n") != canonical_bridge(action, sources[action]):
+            raise ValueError(f"Existing {destination} is not the same canonical Harness bridge; "
+                             "preserve its content and resolve semantic uncertainty first")
+    return sources
+
+
+def prepare(before, info, profile, plan, canonical_sources=None):
     after = dict(before)
     old_agents = decode(before[FILES[0]] or b"")
     spans = boundaries(old_agents)
@@ -217,6 +269,10 @@ def prepare(before, info, profile, plan):
         agents = agents.replace("{{core}}", core).replace("{{profile}}", stance).replace("{{invariants}}", "\n\n" + "\n\n".join(unique) if unique else "")
     boundaries(agents)
     after[FILES[0]] = (encode_exact if info["mode"] == "maintain" else encode)(agents, before[FILES[0]] or b"")
+    for action, path in (canonical_sources or {}).items():
+        name = ROUTES[action]
+        if after[name] is None:
+            after[name] = encode(canonical_bridge(action, path))
     for name in FILES[1:4]:
         if after[name] is None:
             after[name] = (SKILL / "assets/harness" / name).read_bytes()
@@ -242,7 +298,8 @@ def run(root, profile=None, plan=None, inspect_only=False, dry_run=False):
     profile = profile or info["configured_profile"]
     if profile not in PROFILES:
         raise ValueError("Choose one evidence-backed primary profile: software, research, competition")
-    after, decisions = prepare(before, info, profile, plan)
+    sources = validate_canonical_sources(root, before, info, plan)
+    after, decisions = prepare(before, info, profile, plan, sources)
     changed = [name for name in FILES if before[name] != after[name]]
     if dry_run:
         for name in changed:

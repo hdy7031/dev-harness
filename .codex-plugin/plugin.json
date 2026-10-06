@@ -1,6 +1,6 @@
 {
   "name": "dev-harness",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Lightweight development-project bootstrap, handoff, and Git recovery workflows.",
   "author": {
     "name": "Local developer"
