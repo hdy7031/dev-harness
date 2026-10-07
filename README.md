@@ -19,13 +19,17 @@ Codex loads the installed cache rather than the development directory. After an 
 
 ## Use
 
-- `$dev-harness:project-bootstrap` adapts project guidance to **software**, **research**, or **competition** priorities. It chooses **Seed** for new projects, **Reconcile** for existing guidance, or **Maintain** for an initialized harness. Profiles express decision priorities rather than fixed workflows.
+- `$dev-harness:project-bootstrap` adapts project guidance to **software**, **research**, or **competition** priorities. It chooses **Seed** for new projects, **Reconcile** for mature projects, including first Harness installation, or **Maintain** for an initialized harness. Profiles express decision priorities rather than fixed workflows.
 - `$dev-harness:project-handoff` refreshes `HANDOFF.md` for the next session.
 - `$dev-harness:git-recovery` diagnoses and repairs common Git failures while preserving existing work.
 
 Bootstrap V2 composes `AGENTS.md` from a short common kernel, a profile stance, and repository-specific invariants. Managed boundaries allow common/profile updates while preserving unique project rules. Changing state belongs in `HANDOFF.md`, `docs/PROJECT_CONTEXT.md`, and `docs/DECISIONS.md`. Reconcile preserves established canonical Context/Decisions sources; the corresponding Harness docs become thin compatibility bridges instead of duplicating the existing knowledge store.
 
-The bootstrap helper requires **Python 3.11 or later** and uses only the standard library. Plugin package version `0.2.2` and generated harness version `2` are separate version numbers.
+Reconcile binds a declared decision read set and all five output states: stale plans cause zero project writes. Each invocation holds an OS project lock through recovery checks, apply/rollback and cleanup. Routes require Codex's explicit relocation acknowledgement; the helper never infers knowledge equivalence from destination text.
+
+Verified stages and original-byte recovery evidence use their own private permissions outside Git working trees; source permissions are private manifest data, never backup ACLs. Existing owner/group and equivalent DACL grants are proved before replacement, then installed with verified future-inheritance protection. Rollback requires complete supported-state ownership and preserves external ACL/ADS/metadata mutations with `rollback-incomplete`. Windows ADS and known unsupported metadata are rejected at preflight. Recovery covers main-stream bytes and supported access metadata, not complete filesystem metadata. Same-filesystem storage is required; unsupported permissions/storage fail closed. This remains an ordered recovery protocol without multi-file atomicity. See the [plan/apply contract](skills/project-bootstrap/references/reconcile.md).
+
+The bootstrap helper requires **Python 3.11 or later** and uses only the standard library. Plugin package version `0.3.0` and generated harness version `2` are separate version numbers.
 
 ## Layout
 
