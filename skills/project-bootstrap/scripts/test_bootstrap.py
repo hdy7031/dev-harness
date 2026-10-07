@@ -99,7 +99,7 @@ class BootstrapTests(unittest.TestCase):
                 rule.setdefault("relocation_acknowledgement", "verbatim_safe")
         paths = list(read_paths) + [entry["path"] for entry in plan.get("canonical_sources", {}).values()]
         info = bootstrap.run(self.root, inspect_only=True, read_paths=paths)
-        return {**plan, "protocol": 1, "mode": "reconcile", "profile": "software",
+        return {**plan, "protocol": 2, "mode": plan.get("mode", "reconcile"), "profile": "software",
                 "mode_evidence": "Existing project knowledge requires semantic reconciliation",
                 "profile_evidence": "Observed software project objective",
                 "expected_before": info["expected_before"], "read_set": info["read_set"]}
@@ -109,13 +109,176 @@ class BootstrapTests(unittest.TestCase):
         spans = bootstrap.boundaries(agents)
         self.assertEqual(set(spans), {"core", "profile"})
         project_start = agents.index("## Project-specific invariants")
-        self.assertGreater(project_start, spans["profile"][1])
+        self.assertLess(project_start, spans["core"][0])
         for invariant in invariants:
-            self.assertIn(invariant, agents[project_start:])
+            self.assertIn(invariant, agents[project_start:spans["core"][0]])
             self.assertNotIn(invariant, agents[:project_start])
         config = tomllib.loads((self.root / ".harness/config.toml").read_text())
         self.assertEqual(config["harness"], {"version": 2, "profile": profile})
         return agents, config
+
+    def knowledge_plan(self, mode, layers, reads=(), rules=None, sources=None):
+        paths = list(reads) + [name for name in bootstrap.FILES if (self.root / name).is_file()]
+        info = bootstrap.run(self.root, inspect_only=True, read_paths=tuple(dict.fromkeys(paths)))
+        plan = {"protocol": 2, "mode": mode, "profile": "software",
+                "mode_evidence": "Observed project lifecycle", "profile_evidence": "Software test project",
+                "expected_before": info["expected_before"], "read_set": info["read_set"],
+                "knowledge": [{"layer": layer, "text": text, "reason": "Caller-authored final knowledge",
+                               "evidence_paths": list(reads)} for layer, text in layers.items()]}
+        if rules is not None:
+            plan["rules"] = rules
+        if sources is not None:
+            plan["canonical_sources"] = sources
+        return plan
+
+    def test_knowledge_seed_populates_all_layers_and_noop_keeps_timestamps(self):
+        self.write("README.md", "Backend returns text/spans. Real-engine validation is pending.\n")
+        texts = {"invariant": "- Preserve text/spans backend contract.",
+                 "context": "# Context\nReal-engine validation is pending.\n",
+                 "decision": "# Decisions\nNo evidenced consequential choices yet.\n",
+                 "handoff": "# Handoff\nNo active handoff.\n"}
+        plan = self.knowledge_plan("seed", texts, ("README.md",))
+        result = bootstrap.run(self.root, plan=plan)
+        self.assertEqual(set(result["changed"]), set(bootstrap.FILES))
+        self.assert_layers("software", (texts["invariant"],))
+        for layer in bootstrap.ROUTES:
+            self.assertEqual((self.root / bootstrap.ROUTES[layer]).read_text(), texts[layer])
+        before = self.snapshot()
+        self.assertEqual(bootstrap.run(self.root)["changed"], [])
+        self.assertEqual(self.snapshot(), before)
+
+    def test_knowledge_reconcile_replaces_dynamic_and_duplicate_legacy_text(self):
+        self.write("AGENTS.md", "# Legacy\nStable contract.\nStable contract.\nOld stage.\n")
+        self.write("README.md", "New stage and documented rationale.\n")
+        self.write("docs/PROJECT_CONTEXT.md", "# Context\nStale stage.\n")
+        plan = self.knowledge_plan("reconcile", {
+            "invariant": "- Stable contract.", "context": "# Context\nNew stage; see ../README.md.\n",
+            "decision": "# Decisions\nSee ../README.md for rationale.\n"}, ("README.md", "AGENTS.md"),
+            rules=[{"start": 1, "end": 1, "action": "drop", "reason": "Heading replaced"},
+                   {"start": 2, "end": 3, "action": "invariant", "reason": "Merged in final invariant block"},
+                   {"start": 4, "end": 4, "action": "context", "reason": "Replaced by current evidence",
+                    "relocation_acknowledgement": "rewritten", "text": "See ../README.md"}])
+        bootstrap.run(self.root, plan=plan)
+        agents = (self.root / "AGENTS.md").read_text()
+        context = (self.root / bootstrap.ROUTES["context"]).read_text()
+        self.assertEqual(agents.count("Stable contract."), 1)
+        self.assertNotIn("Old stage", agents)
+        self.assertNotIn("Stale stage", context)
+        self.assertNotIn("Imported from", context)
+
+    def test_knowledge_maintain_changes_only_submitted_layers(self):
+        self.write("README.md", "Actual validation completed.\n")
+        bootstrap.run(self.root, "software", mode="seed")
+        before = self.snapshot()
+        plan = self.knowledge_plan("maintain", {"context": "# Context\nValidation complete; see ../README.md.\n"}, ("README.md",))
+        self.assertEqual(bootstrap.run(self.root, plan=plan)["changed"], [bootstrap.ROUTES["context"]])
+        after = self.snapshot()
+        for name in bootstrap.FILES:
+            if name != bootstrap.ROUTES["context"]:
+                self.assertEqual(before[name], after[name])
+        plan = self.knowledge_plan("maintain", {"context": "# Context\nValidation complete; see ../README.md.\n"}, ("README.md",))
+        self.assertEqual(bootstrap.run(self.root, plan=plan)["changed"], [])
+        self.assertEqual(self.snapshot(), after)
+
+    def test_knowledge_binding_and_destination_read_required_in_all_modes(self):
+        for mode in ("seed", "reconcile", "maintain"):
+            with self.subTest(mode=mode):
+                self.root = Path(self.workspace.name) / mode
+                self.root.mkdir()
+                self.write("README.md", "Source fact.\n")
+                if mode == "maintain":
+                    bootstrap.run(self.root, "software", mode="seed")
+                plan = self.knowledge_plan(mode, {"context": "# Context\nSource fact.\n"}, ("README.md",), rules=[])
+                before = self.snapshot()
+                invalid = copy.deepcopy(plan)
+                invalid["knowledge"][0]["evidence_paths"] = ["unread.md"]
+                with self.assertRaisesRegex(ValueError, "evidence_paths"):
+                    bootstrap.run(self.root, plan=invalid)
+                self.assertEqual(self.snapshot(), before)
+                self.write("README.md", "Changed source.\n")
+                changed = self.snapshot()
+                with self.assertRaisesRegex(ValueError, "STALE PLAN"):
+                    bootstrap.run(self.root, plan=plan)
+                self.assertEqual(self.snapshot(), changed)
+                self.assertEqual(list(file_security.storage(self.root).iterdir()), [])
+        plan = self.knowledge_plan("maintain", {"context": "# Context\nChanged source.\n"}, ("README.md",))
+        plan["read_set"] = [entry for entry in plan["read_set"] if entry["path"] != bootstrap.ROUTES["context"]]
+        with self.assertRaisesRegex(ValueError, "existing destination"):
+            bootstrap.run(self.root, plan=plan)
+
+    def test_knowledge_maintain_invariant_rewrite_requires_unmanaged_coverage(self):
+        self.write("README.md", "New backend contract.\n")
+        bootstrap.run(self.root, "software", mode="seed")
+        agents_path = self.root / "AGENTS.md"
+        agents_path.write_bytes(b"\xef\xbb\xbf" + agents_path.read_bytes().replace(b"\n", b"\r\n"))
+        plan = self.knowledge_plan("maintain", {"invariant": "- New backend contract."}, ("README.md",), rules=[])
+        with self.assertRaisesRegex(ValueError, "Unaccounted"):
+            bootstrap.run(self.root, plan=plan)
+        inventory = bootstrap.run(self.root, inspect_only=True)["unmanaged_lines"]
+        self.assertFalse(any("Core execution" in item["text"] for item in inventory))
+        plan["rules"] = [{"start": item["line"], "end": item["line"], "action": "drop",
+                          "reason": "Re-edited in final invariant layer"}
+                         for item in inventory if item["text"].strip()]
+        bootstrap.run(self.root, plan=plan)
+        self.assert_layers("software", ("New backend contract",))
+        data = agents_path.read_bytes()
+        self.assertTrue(data.startswith(b"\xef\xbb\xbf"))
+        self.assertNotIn(b"\n", data.replace(b"\r\n", b""))
+
+    def test_knowledge_canonical_maintain_converts_placeholder_but_never_copies_source(self):
+        self.write("README.md", "Current facts and lasting policy live here.\n")
+        bootstrap.run(self.root, "software", mode="seed")
+        sources = {"context": {"path": "README.md", "evidence": "README owns current facts",
+                               "replacement_acknowledgement": "Old empty state contains no unique knowledge"}}
+        plan = self.knowledge_plan("maintain", {}, ("README.md",), sources=sources)
+        self.assertEqual(bootstrap.run(self.root, plan=plan)["changed"], [bootstrap.ROUTES["context"]])
+        bridge = (self.root / bootstrap.ROUTES["context"]).read_text()
+        self.assertNotIn("lasting policy", bridge)
+        plan = self.knowledge_plan("maintain", {"context": "# Context\nA copied ledger.\n"}, ("README.md",))
+        before = self.snapshot()
+        with self.assertRaisesRegex(ValueError, "bridge cannot be replaced"):
+            bootstrap.run(self.root, plan=plan)
+        self.assertEqual(self.snapshot(), before)
+        self.write("README.md", "New facts maintained in the source.\n")
+        before = self.snapshot()
+        self.assertEqual(bootstrap.run(self.root)["changed"], [])
+        self.assertEqual(self.snapshot(), before)
+
+    def test_storage_permission_fallback_reuses_identity_and_refuses_drift(self):
+        legacy, candidates = file_security.storage_candidates(self.root)
+        self.assertGreater(len(candidates), 1)
+        real_private = file_security.private_directory
+        def deny_first(path):
+            if path == candidates[0]:
+                raise PermissionError("Parent cannot create private state")
+            return real_private(path)
+        with mock.patch.object(file_security, "private_directory", side_effect=deny_first):
+            selected = file_security.storage(self.root)
+        self.assertEqual(selected, candidates[1])
+        self.assertEqual(file_security.storage(self.root), selected)
+        self.assertEqual(selected.stat().st_dev, self.root.stat().st_dev)
+        file_security.outside_worktree(selected, self.root)
+        with mock.patch.object(file_security, "private_directory", side_effect=ValueError("Private storage drift")):
+            with self.assertRaisesRegex(ValueError, "drift"):
+                file_security.storage(self.root)
+
+    @unittest.skipUnless(os.name == "nt" and Path("E:/").is_dir(), "Requires actual non-system E: volume")
+    def test_windows_non_system_volume_apply_and_same_volume_recovery(self):
+        with tempfile.TemporaryDirectory(prefix="harness-volume-test-", dir="E:/") as outer:
+            self.root = Path(outer) / "project"
+            self.root.mkdir()
+            self.write(".git/HEAD", "ref: refs/heads/main\n")
+            self.write("README.md", "Actual E: project evidence.\n")
+            plan = self.knowledge_plan("seed", {"context": "# Context\nActual E: evidence.\n"}, ("README.md",))
+            state = file_security.storage(self.root)
+            try:
+                self.assertEqual(state.stat().st_dev, self.root.stat().st_dev)
+                file_security.outside_worktree(state, self.root)
+                bootstrap.run(self.root, plan=plan)
+                self.assertEqual(bootstrap.run(self.root)["changed"], [])
+                self.assertEqual(list(state.iterdir()), [])
+            finally:
+                state.rmdir()  # Successful apply has removed all payloads.
 
     def check_seed(self, profile):
         # Inputs remain untouched, including a file representing user work.
@@ -255,7 +418,14 @@ class BootstrapTests(unittest.TestCase):
         for profile in bootstrap.PROFILES:
             root = self.root / profile
             root.mkdir()
-            bootstrap.run(root, profile, {"invariants": [{"text": "- Original data stays read-only.", "evidence": "Observed project data policy"}]}, mode="seed")
+            (root / "policy.md").write_text("Original data stays read-only.\n")
+            info = bootstrap.run(root, inspect_only=True, read_paths=("policy.md",))
+            bootstrap.run(root, profile, {
+                "protocol": 2, "mode": "seed", "profile": profile,
+                "mode_evidence": "New isolated project", "profile_evidence": "Explicit test objective",
+                "expected_before": info["expected_before"], "read_set": info["read_set"],
+                "invariants": [{"text": "- Original data stays read-only.", "evidence": "Observed project data policy",
+                                "evidence_paths": ["policy.md"]}]}, mode="seed")
             before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in root.rglob("*") if path.is_file()}
             result = bootstrap.run(root)
             self.assertEqual(result["mode"], "maintain")
@@ -263,7 +433,7 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(before, {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in before})
             agents_path = root / "AGENTS.md"
             agents = agents_path.read_text()
-            agents_path.write_bytes(b"\xef\xbb\xbf" + agents.replace("Prioritize real outcomes and value over process completeness.", "Old kernel guidance.").replace("\n", "\r\n").encode() + "\n## Extra project notes\n\nKeep this unique section.\n".encode())
+            agents_path.write_bytes(b"\xef\xbb\xbf" + agents.replace("Deliver the user's objective;", "Old kernel guidance;").replace("\n", "\r\n").encode() + "\n## Extra project notes\n\nKeep this unique section.\n".encode())
             old = bootstrap.decode(agents_path.read_bytes())
             _, boundary_end = bootstrap.boundaries(old)["profile"]
             tail = old[boundary_end:]
@@ -451,11 +621,11 @@ class BootstrapTests(unittest.TestCase):
                 else:
                     link.unlink()
 
-    def test_canonical_field_is_reconcile_only(self):
+    def test_canonical_field_requires_bound_plan_in_every_mode(self):
         plan = {"canonical_sources": {}}
-        self.assert_rejected_without_writes(plan, "only supported for Reconcile")
+        self.assert_rejected_without_writes(plan, "plan protocol 2")
         bootstrap.run(self.root, "software", mode="seed")
-        self.assert_rejected_without_writes(plan, "only supported for Reconcile")
+        self.assert_rejected_without_writes(plan, "plan protocol 2")
 
     def test_single_canonical_role_leaves_other_routing_unchanged(self):
         plan = self.canonical_mature_plan()
@@ -511,7 +681,7 @@ class BootstrapTests(unittest.TestCase):
         result = self.cli("--inspect", *arguments)
         self.assertEqual(result.returncode, 0, result.stderr)
         info = json.loads(result.stdout)
-        plan = {"protocol": 1, "mode": "reconcile", "mode_evidence": "Existing ledger and software need reconciliation",
+        plan = {"protocol": 2, "mode": "reconcile", "mode_evidence": "Existing ledger and software need reconciliation",
                 "profile": "software", "profile_evidence": "Observed software objective",
                 "read_set": info["read_set"], "expected_before": info["expected_before"],
                 "rules": [{"start": 1, "end": 1, "action": "context", "reason": "Retain current project fact",
@@ -989,7 +1159,7 @@ class BootstrapTests(unittest.TestCase):
         agents = (self.root / "AGENTS.md").read_text()
         for path in ("HANDOFF.md", "docs/PROJECT_CONTEXT.md", "docs/DECISIONS.md"):
             self.assertIn(path, agents)
-        self.assertIn("Follow canonical bridges", agents)
+        self.assertIn("Follow bridges to their canonical sources", agents)
         self.assert_layers("software")
 
     def launch(self, *arguments):

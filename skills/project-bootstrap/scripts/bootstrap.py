@@ -18,7 +18,7 @@ FILES = ("AGENTS.md", "HANDOFF.md", "docs/PROJECT_CONTEXT.md",
          "docs/DECISIONS.md", ".harness/config.toml")
 PROFILES = ("software", "research", "competition")
 ROUTES = {"context": FILES[2], "handoff": FILES[1], "decision": FILES[3]}
-PLAN_PROTOCOL = 1  # Independent of Harness schema 2.
+PLAN_PROTOCOL = 2  # Independent of Harness schema 2.
 RECOVERY_PREFIX = ".dev-harness-recovery-"
 
 
@@ -100,6 +100,15 @@ def read_project(root):
     return before
 
 
+def unmanaged_inventory(text):
+    spans, offset, result = boundaries(text), 0, []
+    for i, line in enumerate(text.splitlines(keepends=True), 1):
+        if not any(a <= offset < b for a, b in spans.values()):
+            result.append({"line": i, "text": line.rstrip("\r\n")})
+        offset += len(line)
+    return result
+
+
 def inspect(before):
     agents = decode(before[FILES[0]] or b"")
     spans = boundaries(agents)
@@ -120,6 +129,7 @@ def inspect(before):
             "version": version, "agents_sha256": digest(before[FILES[0]] or b""),
             "legacy_lines": [] if spans else [
                 {"line": i, "text": line} for i, line in enumerate(agents.splitlines(), 1)],
+            "unmanaged_lines": unmanaged_inventory(agents),
             "expected_before": {name: digest(data) if data is not None else None
                              for name, data in before.items()}}
 
@@ -140,19 +150,19 @@ def read_set(root, paths):
 def validate_plan(root, before, info, plan, mode, profile):
     if plan is not None and not isinstance(plan, dict):
         raise ValueError("Plan must be an object")
-    if mode != "reconcile":
+    if plan is None and mode != "reconcile":
         return
     if plan is None or plan.get("protocol") != PLAN_PROTOCOL or type(plan.get("protocol")) is not int:
-        raise ValueError("Reconcile requires plan protocol 1; regenerate legacy plans")
+        raise ValueError("Knowledge changes require plan protocol 2; regenerate legacy plans")
     allowed = {"protocol", "mode", "profile", "mode_evidence", "profile_evidence",
-               "expected_before", "read_set", "rules", "invariants", "canonical_sources"}
+               "expected_before", "read_set", "rules", "invariants", "canonical_sources", "knowledge"}
     if set(plan) - allowed:
-        raise ValueError(f"Unknown Reconcile plan fields: {sorted(set(plan) - allowed)}")
+        raise ValueError(f"Unknown knowledge plan fields: {sorted(set(plan) - allowed)}")
     if plan.get("mode") != mode or plan.get("profile") != profile:
         raise ValueError("Plan mode/profile must match the requested semantic intent")
     for key in ("mode_evidence", "profile_evidence"):
         if not isinstance(plan.get(key), str) or not plan[key].strip():
-            raise ValueError(f"Reconcile requires {key}")
+            raise ValueError(f"Knowledge plan requires {key}")
     expected = plan.get("expected_before")
     if not isinstance(expected, dict) or set(expected) != set(FILES):
         raise ValueError("Plan must bind expected-before for all five Harness outputs")
@@ -194,7 +204,7 @@ def validate_bindings(root, before, plan, mode, applied=None, after=None):
         expected[name] = after[name]
     if current != expected:
         raise ValueError("STALE PLAN: Harness output changed")
-    if mode == "reconcile":
+    if plan is not None:
         for entry in plan["read_set"]:
             path = project_path(root, entry["path"])
             data = path.read_bytes() if path.is_file() else None
@@ -251,7 +261,7 @@ def update_config(original, profile):
     return original if old == expected else encode_exact(result, original or b"")
 
 
-def reconcile(text, plan):
+def reconcile(text, plan, managed=False):
     lines = text.splitlines()
     accounted = set()
     invariants, routes, decisions = [], {name: [] for name in ROUTES}, []
@@ -292,10 +302,45 @@ def reconcile(text, plan):
         if action not in ("merge", "drop") and not body.strip():
             raise ValueError("Preserved/moved rules cannot have empty text")
         decisions.append({"lines": [start, end], "action": action, "reason": reason})
-    required = {i for i, line in enumerate(lines, 1) if line.strip()}
+    inventory = unmanaged_inventory(text) if managed else [
+        {"line": i, "text": line} for i, line in enumerate(lines, 1)]
+    required = {item["line"] for item in inventory if item["text"].strip()}
     if required - accounted:
         raise ValueError(f"Unaccounted old guidance lines: {sorted(required - accounted)}")
     return invariants, routes, decisions
+
+
+def knowledge_edits(before, plan):
+    """Caller-authored final layers. No classification, merging or deduplication."""
+    result = {}
+    declared = {entry["path"] for entry in plan["read_set"]} if plan else set()
+    items = (plan or {}).get("knowledge", [])
+    if not isinstance(items, list):
+        raise ValueError("knowledge must be a list")
+    for item in items:
+        if not isinstance(item, dict) or set(item) != {"layer", "text", "reason", "evidence_paths"}:
+            raise ValueError("Knowledge entries require layer, text, reason and evidence_paths")
+        layer = item["layer"]
+        if not isinstance(layer, str) or layer not in {"invariant", *ROUTES} or layer in result:
+            raise ValueError("Knowledge requires a unique supported layer")
+        for key in ("text", "reason"):
+            if not isinstance(item[key], str) or not item[key].strip():
+                raise ValueError(f"Knowledge requires nonempty {key}; state an empty layer honestly")
+        evidence_paths(item, declared, required=True)
+        name = FILES[0] if layer == "invariant" else ROUTES[layer]
+        if before[name] is not None and name not in declared:
+            raise ValueError(f"Knowledge replacement must read its existing destination: {name}")
+        result[layer] = item["text"].replace("\r\n", "\n").rstrip("\n") + "\n"
+    return result
+
+
+def existing_bridge(action, original):
+    """Recognize only this helper's exact bridge representation, not authority."""
+    text = decode(original or b"").replace("\r\n", "\n")
+    for path in re.findall(r"^`([^`\n]+)`$", text, re.M):
+        if text == canonical_bridge(action, path):
+            return path
+    return None
 
 
 def canonical_bridge(action, path):
@@ -311,8 +356,6 @@ def canonical_bridge(action, path):
 def validate_canonical_sources(root, before, info, plan):
     if plan is None or "canonical_sources" not in plan:
         return {}
-    if info["mode"] != "reconcile":
-        raise ValueError("canonical_sources is only supported for Reconcile")
     declared = plan["canonical_sources"]
     if not isinstance(declared, dict) or set(declared) - {"context", "decision"}:
         raise ValueError("canonical_sources accepts only context and decision entries")
@@ -320,7 +363,7 @@ def validate_canonical_sources(root, before, info, plan):
     for action, item in declared.items():
         if not isinstance(item, dict):
             raise ValueError(f"Canonical {action} requires path and evidence")
-        if set(item) - {"path", "evidence"}:
+        if set(item) - {"path", "evidence", "replacement_acknowledgement"}:
             raise ValueError(f"Unknown canonical {action} fields")
         value, evidence = item.get("path"), item.get("evidence")
         if not isinstance(value, str) or not value.strip():
@@ -347,8 +390,10 @@ def validate_canonical_sources(root, before, info, plan):
         destination = ROUTES[action]
         existing = before[destination]
         if existing is not None and decode(existing).replace("\r\n", "\n") != canonical_bridge(action, sources[action]):
-            raise ValueError(f"Existing {destination} is not the same canonical Harness bridge; "
-                             "preserve its content and resolve semantic uncertainty first")
+            ack = item.get("replacement_acknowledgement")
+            if not isinstance(ack, str) or not ack.strip() or destination not in {entry["path"] for entry in plan["read_set"]}:
+                raise ValueError(f"Existing {destination} is not the same canonical Harness bridge; "
+                                 "bind the destination and acknowledge its knowledge disposition first")
     return sources
 
 
@@ -358,10 +403,14 @@ def prepare(before, info, profile, plan, canonical_sources=None):
     spans = boundaries(old_agents)
     core = (SKILL / "assets/core.md").read_text(encoding="utf-8").strip()
     stance = (SKILL / f"assets/profiles/{profile}.md").read_text(encoding="utf-8").strip()
+    knowledge = knowledge_edits(before, plan)
+    for action in ROUTES:
+        if action in knowledge and (action in (canonical_sources or {}) or existing_bridge(action, before[ROUTES[action]])):
+            raise ValueError(f"Canonical {action} bridge cannot be replaced by synthesized knowledge; update its source")
     routes, decisions = {name: [] for name in ROUTES}, []
-    if info["mode"] == "maintain":
-        if plan is not None:
-            raise ValueError("Maintain preserves unmanaged content; omit the reconciliation plan")
+    if info["mode"] == "maintain" and "invariant" not in knowledge:
+        if (plan or {}).get("rules") or (plan or {}).get("invariants"):
+            raise ValueError("Maintain rule rewriting requires an invariant knowledge replacement")
         # Reverse order makes offsets stable and leaves every unmanaged character untouched.
         agents = old_agents
         newline = "\r\n" if b"\r\n" in (before[FILES[0]] or b"") else "\n"
@@ -370,12 +419,12 @@ def prepare(before, info, profile, plan, canonical_sources=None):
             replacement = f"<!-- dev-harness:{name}:start -->\n{content}\n<!-- dev-harness:{name}:end -->".replace("\n", newline)
             agents = agents[:a] + replacement + agents[b:]
     else:
-        if spans:
+        if spans and info["mode"] != "maintain":
             raise ValueError("Managed guidance without metadata: restore metadata without rebuilding unique content")
-        if info["mode"] == "reconcile":
+        if info["mode"] in ("reconcile", "maintain"):
             if plan is None:
                 raise ValueError("Reconcile requires an explicit semantic plan")
-            invariants, routes, decisions = reconcile(old_agents, plan)
+            invariants, routes, decisions = reconcile(old_agents, plan, managed=info["mode"] == "maintain")
         else:
             invariants = []
         items = (plan or {}).get("invariants", [])
@@ -386,23 +435,26 @@ def prepare(before, info, profile, plan, canonical_sources=None):
                 raise ValueError("New invariants require text and concrete project evidence")
             if set(item) - {"text", "evidence", "evidence_paths"}:
                 raise ValueError("Unknown invariant fields")
-            if info["mode"] == "reconcile":
-                evidence_paths(item, {entry["path"] for entry in plan["read_set"]}, required=True)
+            evidence_paths(item, {entry["path"] for entry in plan["read_set"]}, required=True)
             invariants.append(item["text"].strip())
         agents = (SKILL / "assets/harness/AGENTS.md").read_text(encoding="utf-8")
-        agents = agents.replace("{{core}}", core).replace("{{profile}}", stance).replace("{{invariants}}", "\n\n" + "\n\n".join(invariants) if invariants else "")
+        stable = knowledge.get("invariant", "\n\n".join(invariants) or "No project-specific invariants have been established.")
+        agents = agents.replace("{{core}}", core).replace("{{profile}}", stance).replace("{{invariants}}", stable.rstrip())
     boundaries(agents)
-    after[FILES[0]] = (encode_exact if info["mode"] == "maintain" else encode)(agents, before[FILES[0]] or b"")
+    preserve_exact = info["mode"] == "maintain" and "invariant" not in knowledge
+    after[FILES[0]] = (encode_exact if preserve_exact else encode)(agents, before[FILES[0]] or b"")
     for action, path in (canonical_sources or {}).items():
         name = ROUTES[action]
-        if after[name] is None:
-            after[name] = encode(canonical_bridge(action, path))
+        if existing_bridge(action, after[name]) != path:
+            after[name] = encode(canonical_bridge(action, path), before[name] or b"")
     for name in FILES[1:4]:
         if after[name] is None:
             after[name] = (SKILL / "assets/harness" / name).read_bytes()
     for action, chunks in routes.items():
         name = ROUTES[action]
-        if chunks:
+        if action in knowledge:
+            after[name] = encode(knowledge[action], before[name] or b"")
+        elif chunks:
             # Preserve every existing byte; normalize only the appended material.
             suffix = "\n\n## Imported from prior AGENTS\n\nHistorical source; verify current status before relying on it.\n\n" + "\n\n".join(chunks) + "\n"
             after[name] += encode(suffix, after[name]).removeprefix(b"\xef\xbb\xbf")
@@ -648,6 +700,7 @@ def _run_locked(root, profile, plan, inspect_only, dry_run, mode, read_paths, fa
         paths = ([FILES[0]] if before[FILES[0]] is not None else []) + list(read_paths)
         info["read_set"] = read_set(root, list(dict.fromkeys(paths)))
         info["pending_recovery"] = pending
+        info["state_root"] = str(state_home)
         return info
     if plan is not None and not isinstance(plan, dict):
         raise ValueError("Plan must be an object")

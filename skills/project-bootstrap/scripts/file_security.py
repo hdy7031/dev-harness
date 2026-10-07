@@ -239,9 +239,8 @@ def private_directory(path):
             raise ValueError("Private recovery storage has unexpected owner/mode")
 
 
-def storage(root, create=True):
-    # One host-wide, environment-independent location per project. A different
-    # user who cannot verify its private owner/DACL must fail closed, not fork state.
+def storage_candidates(root):
+    """Deterministic same-filesystem locations, independent of TEMP and user."""
     if os.name == "nt":
         folder = C.create_unicode_buffer(260)
         if common_data(None, 0x23, None, 0, folder) != 0:  # CSIDL_COMMON_APPDATA.
@@ -249,12 +248,48 @@ def storage(root, create=True):
         parent = Path(folder.value).resolve()
     else:
         parent = Path("/tmp")
-    base = parent / ("dev-harness-" + project_identity(root))
-    # Never place raw originals under a selected project or any containing Git worktree.
-    outside_worktree(base, root)
-    if create:
-        private_directory(base)
-    return base
+    name = "dev-harness-" + project_identity(root)
+    legacy = parent / name
+    candidates = []
+    for parent in (parent, *root.parents):
+        base = parent / name
+        try:
+            outside_worktree(base, root)
+        except ValueError:
+            continue  # A nested repository needs an ancestor outside the outer tree.
+        if parent.stat().st_dev == root.stat().st_dev and base not in candidates:
+            candidates.append(base)
+    return legacy, candidates
+
+
+def storage(root, create=True):
+    legacy, candidates = storage_candidates(root)
+    # Never hide 0.3.0 recovery evidence, including an old cross-volume container.
+    if legacy not in candidates and legacy.exists():
+        private_directory(legacy)
+        if any(legacy.iterdir()):
+            return legacy
+    existing = [base for base in candidates if base.exists()]
+    if len(existing) > 1:
+        raise ValueError("Multiple project state roots; review recovery storage before retrying")
+    if existing:
+        # Permission drift is a hard failure, not permission to fork recovery state.
+        private_directory(existing[0])
+        return existing[0]
+    if not candidates:
+        raise ValueError("No same-filesystem private storage outside Git working trees")
+    if not create:
+        return candidates[0]
+    failures = []
+    for base in candidates:
+        try:
+            private_directory(base)
+            return base
+        except PermissionError as exc:
+            if base.exists():
+                raise  # An existing but unverifiable container must not be bypassed.
+            failures.append(str(exc))
+    raise PermissionError("No writable same-filesystem state root outside Git; " + "; ".join(failures))
 
 
 def metadata(path):

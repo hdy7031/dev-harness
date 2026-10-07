@@ -1,3 +1,3 @@
 # Project context
 
-Record current architecture and project-stage facts that affect future work.
+No current project facts have been established from evidence yet.

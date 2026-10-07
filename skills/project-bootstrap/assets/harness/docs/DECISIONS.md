@@ -1,3 +1,3 @@
 # Decisions
 
-Record consequential choices with their date and rationale.
+No consequential project decisions with evidenced rationale have been established yet.

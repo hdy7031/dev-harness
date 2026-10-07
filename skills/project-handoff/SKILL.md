@@ -5,10 +5,10 @@ description: Create or update a repository's HANDOFF.md when a session is ending
 
 # Project handoff
 
-Work in the selected repository. Read `AGENTS.md`, the existing `HANDOFF.md` if present, relevant project context and decisions, Git status, current branch and HEAD, and recent work. Use repository and session evidence to distinguish completed work from plans or claims in an older handoff.
+Work in the selected repository. Read `AGENTS.md`, existing `HANDOFF.md`, relevant Context/Decisions, Git status and recent work. Follow canonical bridges to their actual sources before judging current state. Use repository and session evidence to distinguish completion from old plans or claims.
 
-Write only what a fresh session needs to continue: the current goal, verified completed work, branch/HEAD/worktree state, blockers or unfinished work, important architecture and project constraints, decisions not to reverse casually, concrete pitfalls already encountered, and the next highest-value action. Mark material uncertainty plainly; do not invent completed work or project facts.
+Write the current goal, minimum continuation state, blocker, next concrete action and a few pitfalls that still affect it. Reference README/Context/Decisions for stable architecture, policy, validation and rationale instead of explaining them again. Git identifiers, test totals, hashes, implementation details and failed attempts belong here only when needed to choose or execute the next action. Mark uncertainty plainly. If no continuation exists, say “No active handoff” instead of leaving blank headings.
 
-Replace stale current-state sections instead of appending another historical layer. Retain older information only when it still affects the next action. Keep the file concise, without a full history, excessive checklists, or duplicated `AGENTS.md` rules. Do not run project tests solely to write the handoff.
+Rewrite from the current continuation; replace stale state each time. Do not accumulate completed rounds or keep an old detail merely because it was once useful. For each paragraph, ask whether removing it would change the recipient's next action; otherwise remove it or replace it with a source reference. Consume canonical ledgers but do not copy them into HANDOFF. Compression serves correct action, not a byte target. Do not run project tests solely to write the handoff.
 
-Verify by inspecting the `HANDOFF.md` diff and comparing its claims with the current repository state. Stop when the handoff is accurate and the diff contains only the intended update.
+Inspect the diff and actual final file against current evidence. Confirm a fresh reader can identify the blocker and first concrete action without repeating completed exploration, stale directions are gone, and repeated refreshes have not accumulated history. Stop when accurate and scoped.

@@ -1,113 +1,107 @@
-# Reconcile plan/apply contract
+# Evidence-backed knowledge plan / apply contract
 
-Codex decides meaning; the standard-library helper checks mechanics. Plugin package `0.3.0`, plan protocol `1`, and Harness schema `2` are independent. Legacy AGENTS-only plans are rejected; regenerate them from current inspection.
+Codex decides meaning; the standard-library helper checks mechanics. Plan Protocol **2** and Harness schema **2** are independent. Regenerate Protocol 1 plans; this change does not alter the generated Harness schema or transaction protocol.
 
-## Inspect, plan, preview, apply
+## Inspect, synthesize, preview, apply
 
-`HELPER` is this skill's absolute `scripts/bootstrap.py` path; `PROJECT` is the selected repository. Keep plan JSON outside the project, including outside all five outputs and their evidence sources.
+`HELPER` is the absolute `scripts/bootstrap.py` path; `PROJECT` is the selected directory. Keep plan JSON outside the project and its evidence sources.
 
 ```text
-python HELPER PROJECT --inspect --read README.md --read planning/CONTEXT.md --read planning/DECISIONS.md
+python HELPER PROJECT --inspect --read README.md --read src/backend.py --read docs/EXPERIMENT.md
 python HELPER PROJECT --plan PLAN.json --dry-run
 python HELPER PROJECT --plan PLAN.json
 python HELPER PROJECT
 ```
 
-The last call is Maintain after a successful installation and must return `changed: []`. Seed/Maintain usage is in [SKILL.md](../SKILL.md); they need no migration inventory. Seed requires explicit `--mode seed`; missing Harness files never imply a semantically new project. A mature first installation can declare Reconcile with empty `rules` when AGENTS is absent. Maintain requires valid V2 metadata/profile and managed boundaries; it rejects reconciliation plans.
+Use one plan for **seed**, **reconcile** or **maintain**. Seed requires absent outputs; Reconcile is for mature/unmanaged projects, even with absent outputs; Maintain requires configured managed V2. No-plan Seed creates honest empty layers. No-plan Maintain updates managed core/profile while preserving all knowledge bytes. Identical output bytes produce `changed: []` and no timestamp changes.
 
-Inspect returns `install_state`, line inventory, `expected_before`, `read_set`, and absolute `pending_recovery` paths. It includes existing AGENTS in the read set; repeat `--read` for the other files Codex actually used. It does not discover dependencies or canonical authority. Paths must be normalized, project-relative, and contained. Output and canonical symlink/reparse ancestors and file-valued parents are rejected. Other read dependencies may resolve within the project, never outside it.
+Inspect returns `install_state`, old AGENTS `legacy_lines` and `unmanaged_lines` inventory (the latter includes exact line numbers outside managed spans for Maintain rewriting), `expected_before`, declared `read_set`, `state_root` and pending recovery. Include every actual decision file with `--read`: README, source, tests, ordinary/canonical docs, existing destinations and authority evidence. File hashes bind exact bytes, including BOM/newlines. Directory/absence inventories are not bound; re-inspect any decisive ones before apply. The helper neither discovers missing dependencies nor proves that the caller actually read a declared file.
 
-Every invocation, including inspect/dry-run, first acquires an OS lock keyed by the project's filesystem identity. Windows uses a global named mutex; POSIX uses `flock` on a persistent external `/tmp` inode. A competitor fails explicitly before recovery discovery or validation. The handle/descriptor remains held through apply, automatic rollback and cleanup. Process death releases it; a leftover unlocked POSIX inode is harmless. Recovery material still gates retries. Permission-denied or unavailable lock/storage operations fail closed. This serializes cooperating helpers on one host, not unrelated editors, network clients or manual recovery operations.
+## Plan Protocol 2
 
-## Plan protocol 1 and decision read set
-
-This example is structural: replace every hash and each absence claim with the actual inspect result, and supply project-specific evidence/reasons.
+Mandatory fields for every supplied plan are `protocol`, `mode`, `mode_evidence`, `profile`, `profile_evidence`, `expected_before` and `read_set`. Optional fields are `rules`, `knowledge`, `invariants` and `canonical_sources`; unknown fields are rejected. CLI mode/profile must agree. `rules` is required for Reconcile and for a Maintain invariant-block replacement; empty is valid when no old guidance exists.
 
 ```json
 {
-  "protocol": 1,
-  "mode": "reconcile",
-  "mode_evidence": "Established application and knowledge ledger require reconciliation",
-  "profile": "software",
-  "profile_evidence": "User objective and README describe an offline product",
+  "protocol": 2,
+  "mode": "seed",
+  "mode_evidence": "New project with no previous guidance",
+  "profile": "research",
+  "profile_evidence": "README describes controlled OCR experiments",
   "expected_before": {
-    "AGENTS.md": "<SHA256 of exact original bytes>",
+    "AGENTS.md": null,
     "HANDOFF.md": null,
     "docs/PROJECT_CONTEXT.md": null,
     "docs/DECISIONS.md": null,
     ".harness/config.toml": null
   },
   "read_set": [
-    {"path": "AGENTS.md", "sha256": "<SHA256>"},
-    {"path": "README.md", "sha256": "<SHA256>"}
+    {"path": "README.md", "sha256": "<exact lowercase SHA256>"},
+    {"path": "src/backend.py", "sha256": "<exact lowercase SHA256>"}
   ],
-  "rules": [
-    {"start": 1, "end": 1, "action": "drop", "reason": "Structural heading replaced by three layers"},
-    {"start": 2, "end": 2, "action": "merge", "reason": "Covered by common kernel risk-proportional verification"},
-    {"start": 3, "end": 3, "action": "invariant", "reason": "Unique stable offline delivery constraint"},
-    {"start": 4, "end": 4, "action": "context", "reason": "Current architecture fact",
-     "relocation_acknowledgement": "verbatim_safe"}
+  "knowledge": [
+    {
+      "layer": "invariant",
+      "text": "- Backends return Recognition(text, spans); the batch pipeline remains engine-independent.",
+      "reason": "Public backend contract is stable across sessions",
+      "evidence_paths": ["README.md", "src/backend.py"]
+    },
+    {
+      "layer": "context",
+      "text": "# Project Context\n\nControlled glyph fixtures exercise the pipeline. Real-engine recognition and real scans remain unverified; see [scope](../README.md).\n",
+      "reason": "Preserve actual validation boundaries, not generic scaffold prose",
+      "evidence_paths": ["README.md"]
+    }
   ]
 }
 ```
 
-Mandatory top-level fields are those shown above. Optional fields are `invariants` and `canonical_sources`; unknown fields are rejected. A CLI mode/profile, if provided, must match the plan. Hashes are lowercase SHA256 of **exact bytes**, including BOM/newlines. Each read-set entry has exactly `path` and `sha256`, without duplicate paths. Dependencies must be existing regular files. AGENTS, when present, must be included. `expected_before` binds all five outputs: `null` means absent, distinct from a hash of an empty file.
+This is structural: substitute actual inspection hashes and project evidence. Each read-set entry has exactly normalized project-relative `path` and lowercase `sha256`; duplicate paths, missing/nonregular files and escapes are rejected. AGENTS, when present, must be declared. Bind all five `expected_before` states: `null` means absent, distinct from an empty file hash. Hash/output drift rejects with **STALE PLAN -> ZERO PROJECT WRITES**, before stage/backup payloads. Bindings are checked again during apply, including before AGENTS replacement.
 
-Declare **every key project file actually used** to decide mode/profile, classification, invariants, context, decisions, drop/merge, canonical authority, already-preserved knowledge, or new evidence-backed rules. Include ordinary Harness destinations used in reasoning in `read_set` too; `expected_before` independently binds their bytes even if they were not semantic inputs. No filename-based dependency discovery occurs. A missing dependency is a caller contract violation the helper cannot detect. If an absence or directory inventory is decisive, document that limitation and re-inspect it before applying; protocol 1 binds files, not entire filesystem inventories.
+### Caller-authored final knowledge
 
-Before recovery payloads, stages or project writes, apply rechecks the entire declared read set and all five output states. Drift gives **STALE PLAN -> STOP WITH ZERO PROJECT WRITES**, including no stage/backup payloads. Inspect/preview may create the OS lock and an empty private external storage container. Additional gates check dependencies and already-applied outputs, particularly before AGENTS removal. The OS lock prevents another helper from entering those gates concurrently; external writers remain outside its protection.
+Each `knowledge` entry has exactly `layer`, nonempty `text`, nonempty `reason` and nonempty `evidence_paths` drawn from `read_set`. Supported layers are `invariant`, `context`, `decision`, `handoff`, at most one entry per layer. The model edits/compresses/groups all facts for that layer into its final text. The helper does not decide what to retain, classify, merge or deduplicate.
 
-## Semantic inventory and routing
+- `invariant` replaces the entire project-specific stable block, outside managed sections and ahead of core/profile in newly composed AGENTS. A Maintain replacement must inventory all old unmanaged AGENTS lines; managed spans are excluded from required coverage.
+- Other entries replace the entire corresponding document, preserving original BOM/newline style. Existing destinations must belong to `read_set`. Explain preservation/retirement of their knowledge in `reason`; the helper cannot prove semantic losslessness.
+- Omitted layers stay intact; absent layers use explicit empty states. An empty state is nonempty text explaining what is unknown or inactive, never a fabricated decision or continuation.
+- A submitted final layer takes precedence over raw routed chunks for that layer. Do not submit competing rewrites. Review relocated references in the final destination.
 
-Read relevant rules/context/decisions/handoff and enough history to determine current meaning. Account for **every nonblank old AGENTS line**, including headings, with disjoint inclusive `start`/`end` ranges. Each rule requires `action` and a nonempty `reason`. Every `context`/`handoff`/`decision` rule also requires a nonempty `relocation_acknowledgement`. Optional fields are faithful `text` and `evidence_paths` (each path must be in the read set).
+For Seed, capture a few evidenced contracts and verification boundaries rather than filling every heading. For Reconcile, submit edited final layers, not template plus pasted old AGENTS. For Maintain, submit only layers with durable changes. A bug fix, a changed test total or a local setup path alone is insufficient. Detailed experiment results should remain in their existing source, reached through a short entrance or bridge.
 
-| Meaning | Action |
+The older `invariants` field still accepts `[{"text":"...", "evidence":"...", "evidence_paths":["README.md"]}]` for bound additive Seed/Reconcile constraints. Prefer `knowledge` for grouped/re-edited final blocks; Maintain rewriting requires an `invariant` knowledge entry. Every new invariant binds nonempty evidence in all modes.
+
+## Old AGENTS inventory and relocation
+
+Account for every nonblank old AGENTS line, including headings, with disjoint inclusive `start`/`end` ranges. Each rule requires `action` and a concrete `reason`. Optional fields are faithful `text`, `evidence_paths` from the read set and `relocation_acknowledgement`.
+
+| Disposition | Action |
 | --- | --- |
-| Unique long-lived architecture/domain/data/product constraint | `invariant`, outside managed sections |
-| Generic guidance covered by core/profile | `merge`, name the covering principle |
-| Current project fact affecting future development | `context`, unless canonical source declared |
-| Useful next-session continuation | `handoff` |
-| Consequential choice and rationale | `decision`, unless canonical source declared |
-| Obsolete instruction, replaced heading, or safely preserved knowledge | `drop`, explain the evidence and disposition |
+| Stable project contract retained in the final invariant block | `invariant` |
+| Generic advice covered by core/profile | `merge`, naming the covering principle |
+| Current facts / consequential rationale / active continuation | `context` / `decision` / `handoff` |
+| Replaced heading, obsolete rule or knowledge already preserved in a bound source | `drop`, explaining its disposition |
 
-Preserve uncertain unique knowledge; coverage is not semantic equivalence. Split mixed paragraphs or provide a faithful rewrite retaining every constraint. Nested/path-scoped AGENTS remain intact; do not hoist their rules globally. Keep historical phase/test counts explicitly historical. Bootstrap execution branch/HEAD/worktree/backup/push traces belong in the current report; use HANDOFF only when needed for unfinished continuation. Persistent project constraints, architecture, entry points, freezes, or evidence-verified canonical remotes may be current context.
+Merge duplicate constraints, rewrite and reorganize by decision value without losing unique knowledge. Do not hoist nested/path-scoped AGENTS globally. The inventory establishes consideration, not semantic equivalence. Use final `knowledge` layers for semantic re-editing; if omitted, raw routed chunks are preserved by appending, without destination deduplication. This fallback is useful for explicit verbatim transfers, not the normal Reconcile result.
 
-New invariants use `"invariants": [{"text": "...", "evidence": "Why this is stable", "evidence_paths": ["README.md"]}]`. Reconcile requires nonempty bound evidence paths. Seed may use text/evidence alone, or omit the list when no facts are known.
+Every `context`/`decision`/`handoff` rule requires explicit nonempty relocation acknowledgement, even same-directory moves, plain references, fragments and absolute links. `rewritten` also requires rule `text`. The helper checks declarations, not Markdown correctness. Codex checks both route text and final synthesized references in their new document location.
 
-### No helper knowledge equivalence
+## Canonical authority and bridges
 
-Ordinary destinations retain every existing byte and append **every planned route**, even if the same words already appear there or two planned chunks match. The helper does no substring, block, Markdown, fuzzy, quote/code/comment or invariant-content deduplication. An occasional duplicate is safer than suppressing the only formal source.
-
-Codex may instead choose `drop` with an explicit already-preserved reason, include the preservation destination in `read_set`, and optionally cite it in `evidence_paths`. This is Codex's semantic decision; the helper does not prove equivalence. If a destination needs an authorized semantic merge first, perform it outside this migration and regenerate all bindings before applying.
-
-### Routed references
-
-All cross-document routes need relocation review, **including AGENTS -> HANDOFF in the same directory**, fragments, absolute links, plain prose and reference-style definitions. Codex checks the destination interpretation and declares `relocation_acknowledgement`, for example `verbatim_safe` or `rewritten`; a concrete explanatory string remains supported. `rewritten` requires plan `text`, which the helper uses. Missing/blank declarations are rejected without attempting to parse links, paths or Markdown. For example:
-
-```json
-{"start": 4, "end": 4, "action": "context", "reason": "Retain schema reference",
- "text": "[v2](../schemas/v2.json)",
- "relocation_acknowledgement": "rewritten"}
-```
-
-An acknowledgement alone requires Codex to check that unchanged references remain valid. Fragments may need an explicit document target; a moved reference-style use may need its definition moved or inlined. The helper checks declarations, not semantic correctness. Bind the files used for that judgment. Protocol 1 retains the existing string field and `text` representation; this unpublished contract tightens the acknowledgement requirement without introducing a new wire format.
-
-## Canonical Context / Decisions
-
-Authority requires explicit project guidance or a stable established workflow; finding STATUS/CONTEXT/ADR filenames is insufficient. Declare either role independently:
+Canonical authority requires explicit guidance or a stable workflow, including README/experiment documents that already own current facts or policy. Declare either role in any mode:
 
 ```json
 {"canonical_sources": {
-  "context": {"path": "planning/CONTEXT.md", "evidence": "Root AGENTS explicitly prescribes this authority"},
-  "decision": {"path": "planning/DECISIONS.md", "evidence": "Established project workflow uses this ledger"}
+  "context": {"path": "planning/CONTEXT.md", "evidence": "Root guidance explicitly names this authority"},
+  "decision": {"path": "docs/EXPERIMENT.md", "evidence": "Established experiment policy and rationale live here"}
 }}
 ```
 
-Each entry has exactly `path`/`evidence`. The source must be an existing regular project file and belong to `read_set`. Containment and `os.path.samefile` checks reject identity with **any existing Harness output**, regardless of path spelling. Canonical symlink/junction ancestors and all hardlink aliases are rejected, preventing self-bridges. Its exact bytes are hashed, never modified or copied into the bridge. The corresponding Harness doc directs sessions to read/update that source. Bind files used to establish its authority too.
+Each entry requires `path` and `evidence`; optional `replacement_acknowledgement` explains where existing destination knowledge survives when converting substantive text or retargeting a bridge. Such replacement also requires the destination in `read_set`. This is an explicit caller decision; the helper does not prove equivalence. Without it, substantive/different-target existing destinations fail closed. Exact same-target helper bridges retain original bytes, including BOM/CRLF.
 
-If old knowledge is already present there, use `drop` with reason `already preserved in canonical source <path>` and optionally bound `evidence_paths`. This is Codex's semantic judgment, not helper deduplication. Unique missing knowledge blocks apply: update the ledger first outside bootstrap's write scope, then regenerate the plan. A declared canonical role combined with that same routing action is rejected, even with empty text.
+Sources must be bound existing regular project files. Reject source identity with any Harness output, hardlinks and symlink/junction ancestors, including in-root aliases. Sources are never changed or copied. A canonical role conflicts with raw routing or synthesized knowledge for that role. An existing exact helper bridge cannot be overwritten by synthesized knowledge even if the caller omits the declaration. Follow its actual source before maintaining knowledge or composing a handoff.
 
-Create a bridge only when absent; an existing same-target exact helper bridge accepts BOM/CRLF and remains byte-for-byte intact. Substantive content, extra facts, or another bridge target blocks apply. Resolve that uncertainty without overwriting it. Undeclared roles retain ordinary routing. Maintain preserves bridges without rediscovering authority or rewriting summaries when ledgers change.
+Use `drop` with an explicit already-preserved reason for old knowledge in the canonical source; bind that source. Unique missing knowledge blocks replacement until the source is updated outside this helper's five-file scope and bindings are regenerated. When a ledger changes, the bridge stays intact; update continuation only if the next action changes. A no-plan Maintain never rediscovers authority or copies ledger contents.
 
 ## Staged writes and recovery
 
@@ -121,7 +115,7 @@ All structural, path, coverage, canonical, relocation, config, dependency and ou
 
 Failure may leave duplication; the protocol must not remove a source before preservation targets hold verified final bytes. Abrupt termination retains already-created manifests/original-byte artifacts instead of relying on Python exception handling; early preparation may be incomplete while the source is still untouched. Inspect lists pending recovery, with an inspection error if current outputs are malformed; **all further apply/dry-run calls refuse to proceed** until it is reviewed. No automatic replay or destructive recovery command exists.
 
-Recovery locations are fixed by project filesystem identity: Windows uses the OS ProgramData folder; POSIX uses `/tmp`. Each project directory has a current-user-only protected Windows DACL or POSIX owner/mode `0700`. Existing storage with unexpected permissions/owner is rejected, including access by another user; it cannot silently fork recovery state. Paths do not depend on `TMP/TEMP/TMPDIR`. The helper refuses runtime storage inside any containing Git working tree or the selected project. Backups and stages therefore cannot appear in ordinary project `git add --all`. Successful cleanup deletes their payload directory; an empty private project container may remain. Inspect also gates any legacy root recovery directories.
+Recovery locations are keyed by project filesystem identity. Preserve the existing ProgramData (Windows) or `/tmp` (POSIX) container when it shares the project filesystem. Otherwise choose a private sibling container at the nearest project ancestor outside any containing Git tree, on the same filesystem; try further same-filesystem ancestors if creation is denied. Reuse an existing candidate before creating one, reject multiple state roots or unexpected permissions, and never bypass old nonempty cross-volume recovery. An unwritable candidate with no container may fall back; an existing unverifiable container fails closed. Inspect reports the selected absolute `state_root`. Each project directory has a current-user-only protected Windows DACL or POSIX owner/mode `0700`. Existing storage with unexpected permissions/owner is rejected, including access by another user; it cannot silently fork recovery state. Paths do not depend on `TMP/TEMP/TMPDIR`. The helper refuses runtime storage inside any containing Git working tree or the selected project. Backups and stages therefore cannot appear in ordinary project `git add --all`. Successful cleanup deletes their payload directory; an empty private project container may remain. Inspect also gates any legacy root recovery directories.
 
 For recovery, inspect the reported absolute directory and manifest `project`, `before`/`after`, `originals`, `staged`, `original_metadata`, `original_states`, `rename_states`, `intended_states`, `committed_states` and state against actual files. Stage basenames are relative to that directory. Hash-check originals before restoration; restore the source with its supported access metadata before removing duplicated knowledge. Windows descriptors are hex-encoded recovery data (owner/group/DACL/protection); POSIX access records contain owner/group/mode. A crash between rename and access installation leaves a private target: inspect its full state against the persisted private rename state and intended installed state. An ambiguous replace error may be rolled back only when its full state equals one of those precomputed states; never adopt a drifted file as committed. Review concurrent edits and retain unresolved backups. Manual restoration/cleanup must also hold `file_security.project_lock(root)`; it is not an automatic replay command. Once fully restored or knowingly accepted, delete only reviewed artifacts, inspect, and make a fresh plan. Never delete evidence merely to unblock a retry.
 
@@ -133,7 +127,7 @@ For Windows existing destinations, preflight empty probes must reproduce owner/g
 
 Rollback fingerprints contain main-stream SHA256, owner, group, normalized DACL and presence, DACL protection, Windows attributes, hardlink count, detected ADS names/sizes and integrity-label indicators (or POSIX mode/flags/xattrs). ADS and other unsupported indicators are observed without migrating them: any newly detected stream or metadata drift prevents restoration, including when main-stream bytes are unchanged. The manifest and error report name the differing fields. This detects drift within the supported boundary; it is not a complete filesystem snapshot.
 
-Existing Windows ADS, explicit mandatory integrity labels, nonordinary attributes and hardlinked outputs are rejected during preflight. A missing/unsupported stream/security API also fails closed. The supported preservation scope is main-stream bytes plus the access metadata above. It does **not** promise timestamps, file identity, audit SACLs or all filesystem metadata. Raw backups are not complete file images. Unknown metadata outside this scope remains unsupported. Same-filesystem storage is mandatory for ordered `os.replace`; cross-volume projects/storage refuse before project writes. Storage loss/deletion by the OS or an external actor is outside crash-recovery guarantees.
+Existing Windows ADS, explicit mandatory integrity labels, nonordinary attributes and hardlinked outputs are rejected during preflight. A missing/unsupported stream/security API also fails closed. The supported preservation scope is main-stream bytes plus the access metadata above. It does **not** promise timestamps, file identity, audit SACLs or all filesystem metadata. Raw backups are not complete file images. Unknown metadata outside this scope remains unsupported. Same-filesystem storage is mandatory for ordered `os.replace`; an unavailable same-filesystem location refuses before project writes. Storage loss/deletion by the OS or an external actor is outside crash-recovery guarantees.
 
 Guarantees assume ordinary readable/writable storage and no adversarial concurrent mutation between final checks and filesystem operations. File fsync and ordered replace do **not** prove power-loss durability of directory metadata across all filesystems or filesystem-level multi-file atomicity. Disk/hardware corruption, external deletions, full Markdown semantics, omitted dependencies, and semantic misclassification are outside the mechanical guarantee. Original-byte artifacts and failure reports make those boundaries visible.
 
